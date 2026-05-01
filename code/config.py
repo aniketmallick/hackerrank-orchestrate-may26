@@ -1,0 +1,46 @@
+"""Shared configuration constants for the support triage agent."""
+
+from pathlib import Path
+from typing import Final
+
+ROOT_DIR: Final[Path] = Path(__file__).resolve().parents[1]
+CODE_DIR: Final[Path] = ROOT_DIR / "code"
+DATA_DIR: Final[Path] = ROOT_DIR / "data"
+INDEX_DIR: Final[Path] = ROOT_DIR / "index"
+SUPPORT_TICKETS_DIR: Final[Path] = ROOT_DIR / "support_tickets"
+OUTPUT_CSV: Final[Path] = SUPPORT_TICKETS_DIR / "output.csv"
+
+MODEL: Final[str] = "claude-sonnet-4-6"
+TEMP: Final[int] = 0
+
+CHUNK_TOKENS: Final[int] = 900
+OVERLAP: Final[int] = 120
+BM25_K: Final[int] = 20
+DENSE_K: Final[int] = 20
+FUSED_K: Final[int] = 6
+RRF_C: Final[int] = 60
+
+COMPANIES: Final[tuple[str, ...]] = ("hackerrank", "claude", "visa")
+COMPANY_LABELS: Final[dict[str, str]] = {
+    "hackerrank": "HackerRank",
+    "claude": "Claude",
+    "visa": "Visa",
+}
+INPUT_COMPANIES: Final[tuple[str, ...]] = ("HackerRank", "Claude", "Visa", "None")
+STATUSES: Final[tuple[str, ...]] = ("replied", "escalated")
+REQUEST_TYPES: Final[tuple[str, ...]] = (
+    "product_issue",
+    "feature_request",
+    "bug",
+    "invalid",
+)
+FINAL_OUTPUT_HEADER: Final[tuple[str, ...]] = (
+    "issue",
+    "subject",
+    "company",
+    "response",
+    "product_area",
+    "status",
+    "request_type",
+    "justification",
+)
