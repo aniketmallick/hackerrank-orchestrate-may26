@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import json
 import logging
 from collections.abc import Sequence
+from pathlib import Path
 
-from code.config import FUSED_K
+from tqdm import tqdm
+
+from code.config import FINAL_OUTPUT_HEADER, FUSED_K
+from code.pipeline import Pipeline
 from code.retrieval import dense, hybrid
 from code.retrieval.corpus import build_index
+from code.schema import TicketInput
+from code.stages.preflight import normalize_company
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +35,11 @@ def build_parser() -> argparse.ArgumentParser:
     retrieve_parser.add_argument("--query", required=True, help="Support query to retrieve passages for")
     retrieve_parser.set_defaults(func=_retrieve_command)
 
-    subparsers.add_parser("run", help="Planned: run the ticket agent")
+    run_parser = subparsers.add_parser("run", help="Run the ticket agent on a CSV")
+    run_parser.add_argument("--input", required=True, help="Input support-ticket CSV")
+    run_parser.add_argument("--output", required=True, help="Output predictions CSV")
+    run_parser.set_defaults(func=_run_command)
+
     subparsers.add_parser("eval", help="Planned: evaluate predictions")
     return parser
 
@@ -74,10 +86,57 @@ def _retrieve_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_command(args: argparse.Namespace) -> int:
+    input_path = Path(args.input)
+    output_path = Path(args.output)
+    trace_path = output_path.with_name("trace.jsonl")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    pipeline = Pipeline()
+
+    with input_path.open(newline="", encoding="utf-8") as input_handle:
+        rows = list(csv.DictReader(input_handle))
+
+    with output_path.open("w", newline="", encoding="utf-8") as output_handle, trace_path.open(
+        "w", encoding="utf-8"
+    ) as trace_handle:
+        writer = csv.DictWriter(output_handle, fieldnames=FINAL_OUTPUT_HEADER)
+        writer.writeheader()
+        for row_index, row in enumerate(tqdm(rows, desc="tickets"), start=1):
+            ticket = _ticket_from_row(row)
+            final = pipeline.run(ticket)
+            writer.writerow(final.to_csv_row())
+            trace_handle.write(
+                json.dumps(
+                    {
+                        "row": row_index,
+                        "input": ticket.model_dump(),
+                        "prediction": final.model_dump(),
+                        "trace": pipeline.last_trace,
+                        "token_log": pipeline.token_log,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+
+    print(f"Wrote predictions: {output_path}")
+    print(f"Wrote trace: {trace_path}")
+    return 0
+
+
 def _format_score(score: float | None) -> str:
     if score is None:
         return "None"
     return f"{score:.6f}"
+
+
+def _ticket_from_row(row: dict[str, str]) -> TicketInput:
+    normalized_company = normalize_company(row.get("company") or row.get("Company"))
+    return TicketInput(
+        issue=row.get("issue") or row.get("Issue") or "",
+        subject=row.get("subject") or row.get("Subject") or "",
+        company=None if normalized_company == "None" else normalized_company,
+    )
 
 
 if __name__ == "__main__":

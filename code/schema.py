@@ -24,6 +24,16 @@ class TicketInput(BaseModel):
 class PreflightFlags(BaseModel):
     """Fast safety and validity signals checked before retrieval."""
 
+    issue: str = ""
+    subject: str = ""
+    original_company: CompanyInput | None = None
+    normalized_company: CompanyInput = "None"
+    language: str = "en"
+    has_live_id: bool = False
+    has_email_phone: bool = False
+    injection_score: float = 0.0
+    is_pleasantry: bool = False
+    is_adversarial: bool = False
     is_empty: bool = False
     is_out_of_scope: bool = False
     is_sensitive: bool = False
@@ -62,7 +72,12 @@ class AnswerDraft(BaseModel):
     """Intermediate answer grounded in one or more passages."""
 
     response: str
-    justification: str
+    cited_doc_ids: list[str] = Field(default_factory=list)
+    product_area: str = ""
+    status_proposal: Status = "escalated"
+    request_type: RequestType = "invalid"
+    no_evidence: bool = False
+    justification: str = ""
     passages: list[Passage] = Field(default_factory=list)
 
 

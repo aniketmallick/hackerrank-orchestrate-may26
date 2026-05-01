@@ -10,9 +10,9 @@ INDEX_DIR: Final[Path] = ROOT_DIR / "index"
 SUPPORT_TICKETS_DIR: Final[Path] = ROOT_DIR / "support_tickets"
 OUTPUT_CSV: Final[Path] = SUPPORT_TICKETS_DIR / "output.csv"
 
-MODEL: Final[str] = "claude-sonnet-4-6"
+MODEL: Final[str] = "claude-sonnet-4-5-20250929"
 DENSE_MODEL: Final[str] = "BAAI/bge-base-en-v1.5"
-TEMP: Final[int] = 0
+TEMP: Final[float] = 0.0
 EVAL_TZ: Final[str] = "Asia/Kolkata"
 COST_RATES_USD_PER_MTOK: Final[dict[str, dict[str, float]]] = {
     MODEL: {"input": 3.0, "output": 15.0},
