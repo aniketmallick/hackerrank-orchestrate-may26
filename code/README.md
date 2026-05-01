@@ -33,3 +33,12 @@ Text chunks are stored as JSONL; numpy `.npy` files will hold embedding vectors 
 Chunk sizing uses a deterministic character heuristic, `ceil(chars / 4)`, with `CHUNK_TOKENS=900` and `OVERLAP=120` characters.
 
 Planned commands are visible in `--help`, but only `build-index` is implemented in this scaffold.
+
+## Evaluate The Stub Pipeline
+
+```bash
+python -m code.eval.harness --sample support_tickets/sample_support_tickets.csv
+python -m code.eval.harness --fuzz
+```
+
+The harness currently runs `code.pipeline.Pipeline`, which returns a deterministic hardcoded stub response. It writes `predictions.csv`, `summary.md`, and `trace.jsonl` under `eval/runs/<timestamp>/`; fuzz runs also write `fuzz_report.md` for human inspection.
