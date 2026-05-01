@@ -116,41 +116,11 @@ repo_root=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may
 worktree=main
 parent_agent=none
 
-## [2026-05-02T01:04:33+05:30] Check Second Claude Review
+
+## [2026-05-02T01:00:48+05:30] Review Findings
 
 User Prompt (verbatim, secrets redacted):
-Claude shared the 2nd round review -   Two items still need fixing:                                                     
-                  
-  Fix 1 — conftest.py:21 — delete that line, the comment is wrong:                 
-  # DELETE this line:
-  importlib.import_module("pdb")                                                   
-                                                                                   
-  Fix 2 — code/README.md — add after the bullet list at the bottom:
-                                                                                   
-  ▎ Text chunks are stored as JSONL; numpy .npy files will hold embedding vectors  
-  ▎ in a later prompt.  can you check what to do
-
-Agent Response Summary:
-Verified the conftest.py claim by removing the pdb preload and running the focused pytest suite. Tests still passed because code/__init__.py now provides the stdlib code compatibility symbols needed by pytest, so the pdb preload was no longer required. Removed the stale import path and added the README note clarifying that text chunks are JSONL while future embedding vectors will use numpy .npy. Re-ran tests and CLI help successfully.
-
-Actions:
-* Read conftest.py and code/README.md
-* Edited conftest.py, code/README.md, and log.txt
-* Ran .venv/bin/pytest code/tests/test_corpus.py -q: 7 passed
-* Ran .venv/bin/python -m code.main --help
-
-Context:
-tool=Codex
-branch=scaffold-corpus-indexer
-repo_root=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
-worktree=main
-parent_agent=none
-
-## [2026-05-02T01:00:48+05:30] Review Claude Findings
-
-User Prompt (verbatim, secrets redacted):
-Had a complete end to end review from Claude and it shared its views -  Defects Found
-                                                                                   
+E2E Code Review -                                                                       
   P1 — print() in library code (code/llm.py:20)
                                                                                    
   The prompt constraint is explicit: "No print() in library code; use a            
@@ -231,6 +201,195 @@ Actions:
 Context:
 tool=Codex
 branch=scaffold-corpus-indexer
+repo_root=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
+worktree=main
+parent_agent=none
+
+
+## [2026-05-02T02:44:46+05:30] Implement Hybrid Retrieval
+
+User Prompt (verbatim, secrets redacted):
+Create Fresh Branch  Read AGENTS.md first. Log this turn per §5.2.
+
+Context: code/retrieval/corpus.py and the corpus index already exist (see
+index/<company>/chunks.jsonl). The Anthropic client wrapper is stubbed.
+Do NOT modify corpus.py except to expose helper iterators if needed.
+
+Goal: implement hybrid retrieval as the canonical pattern:
+
+  Query
+    ├──► BM25 keyword search over per-company index → top BM25_K
+    └──► Dense vector search (cosine) over per-company .npy → top DENSE_K
+                ↓
+       Reciprocal Rank Fusion (c=RRF_C)
+                ↓
+       Top FUSED_K passages with combined ranks
+
+Deliverables:
+
+  code/retrieval/bm25.py
+    - BM25 per company using rank_bm25.BM25Okapi.
+    - Tokenizer: lowercase, strip markdown punctuation, split on \W+.
+    - Lazy build; cache the tokenized corpus on disk under
+      index/<company>/bm25.pkl so we don't retokenize on every run.
+    - Function: search(query: str, company: str, k: int) -> list[(doc_id, score)]
+
+  code/retrieval/dense.py
+    - sentence-transformers model: BAAI/bge-base-en-v1.5
+    - Load model once (module-level); embed all chunks per company once
+      and persist to index/<company>/embeddings.npy plus
+      index/<company>/embeddings_doc_ids.json (parallel arrays).
+    - On rebuild: reuse embeddings if corpus hash from manifest.json is
+      unchanged. Document this clearly.
+    - Cosine similarity via numpy. NO faiss / chroma / qdrant.
+    - Function: search(query: str, company: str, k: int) -> list[(doc_id, score)]
+
+  code/retrieval/hybrid.py
+    - reciprocal_rank_fusion(rankings: list[list[doc_id]], c: int = 60)
+        score(d) = sum over each ranking r of 1 / (c + rank_of(d in r))
+        return list[(doc_id, score)] sorted desc.
+    - search(query: str, company: str | None) -> list[Passage]
+        if company is None: fan out across all 3 indices, fuse 6 rankings.
+        else: fuse the 2 rankings for that company.
+        Return top FUSED_K Passage objects (schema.Passage), each with
+        per-source scores (bm25, dense, fused) for ablation.
+
+  code/main.py
+    - Add subcommand: `python -m code.main retrieve --company <c> --query "..."`
+      that prints the top FUSED_K passages with all three scores. This is
+      our manual smoke-test interface.
+
+  code/tests/test_retrieval.py
+    - test_rrf_synthetic: feed two known rankings, assert RRF output matches
+      hand-computed scores.
+    - test_bm25_lost_card: query "lost stolen visa card" against Visa,
+      assert at least one returned doc_id has path containing "travel-support"
+      or "consumer".
+    - test_dense_paraphrase: query "I cannot get into my account" vs the
+      raw HR password reset doc — assert dense beats BM25 on this paraphrase.
+    - test_hybrid_fanout_for_None: query with company=None returns
+      passages from at least 2 distinct companies for an ambiguous query.
+
+Constraints:
+- Embeddings model loads exactly once per process. No re-loading per query.
+- Determinism: set torch random seeds; tokenizer deterministic.
+- Latency budget: hybrid search < 200ms per query after warm start. If you
+  exceed, log a TODO and move on — don't optimize prematurely.
+
+Definition of done:
+1. pytest -q passes including the four new tests.
+2. `python -m code.main retrieve --company Visa --query "stolen travelers cheque"`
+   prints at least 3 passages from data/visa/support/{consumer,small-business}/
+   travelers-cheques.md or similar.
+3. Re-running build-index does NOT re-embed (cache hit on unchanged corpus
+   hash). Show me this in stdout.
+4. Append §5.2 log entry.
+
+Do not implement preflight, routing, grounding, or validator yet.  For Logs use log.txt
+
+Agent Response Summary:
+Created and switched to branch hybrid-retrieval, then implemented canonical hybrid retrieval without modifying corpus.py. Added BM25 cache files, dense numpy embedding cache keyed by the manifest corpus hash, RRF fusion, score-bearing Passage fields, and a retrieve CLI. Verified first-run dense model download with approval, then fixed cached model loading to avoid network retry delays and measured warm hybrid search at 0.0385s. Added the requested tests and confirmed pytest passes.
+
+Actions:
+* Ran git checkout -b hybrid-retrieval
+* Read AGENTS.md, tdd-workflow skill, existing corpus/schema/config/main/tests, chunks.jsonl, manifest.json, and representative data files
+* Added code/retrieval/bm25.py, code/retrieval/dense.py, code/retrieval/hybrid.py, and code/tests/test_retrieval.py
+* Edited code/schema.py, code/main.py, .gitignore, and log.txt
+* Ran .venv/bin/pytest code/tests/test_retrieval.py before implementation: failed as expected on missing modules
+* Ran .venv/bin/pytest code/tests/test_retrieval.py::test_rrf_synthetic code/tests/test_retrieval.py::test_bm25_lost_card -q: 2 passed
+* Ran dense pytest once without network: failed because Hugging Face model was not cached
+* Ran .venv/bin/pytest code/tests/test_retrieval.py::test_dense_paraphrase -q with approved network access: 1 passed
+* Ran .venv/bin/pytest code/tests/test_retrieval.py::test_hybrid_fanout_for_None -q: 1 passed
+* Ran .venv/bin/python -m code.main build-index and confirmed dense embedding cache hit stdout for all companies
+* Ran .venv/bin/python -m code.main retrieve --company Visa --query "stolen travelers cheque" and confirmed top 3 travelers-cheques passages
+* Measured warm hybrid retrieval: warm_hybrid_seconds=0.0385
+* Ran .venv/bin/pytest -q: 11 passed
+* Ran git status --short and git check-ignore for generated cache artifacts
+
+Context:
+tool=Codex
+branch=hybrid-retrieval
+repo_root=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
+worktree=main
+parent_agent=none
+
+## [2026-05-02T03:12:02+05:30] Address Retrieval Review
+
+User Prompt (verbatim, secrets redacted):
+Code Review  -  P1 — MODEL_NAME = "BAAI/bge-base-en-v1.5" hardcoded in dense.py:23, 
+  not in config.py
+                                                                      
+  The constraint is explicit: "No hardcoded model strings outside     
+  config.py." The embedding model is defined only in dense.py:23 and
+  referenced in dense.py:81,95,97,98,135. To swap embedding models for
+   ablation, you'd need to edit dense.py directly rather than touching
+   only config.py.
+
+  Fix: Move to config.py:                                             
+  DENSE_MODEL: Final[str] = "BAAI/bge-base-en-v1.5"
+  Import it in dense.py as from code.config import DENSE_MODEL and    
+  replace all uses of MODEL_NAME.                                     
+                                                                      
+  P1 — bm25.py:51 calls chunks_path.stat() without existence check    
+                                                                      
+  # bm25.py:51    
+  chunks_mtime_ns = chunks_path.stat().st_mtime_ns  # raises          
+  FileNotFoundError if missing                                        
+   
+  If index/<company>/chunks.jsonl does not exist (corpus not yet      
+  built), stat() raises FileNotFoundError with no user-friendly
+  message. The prior round added a guard in corpus.py but bm25.py     
+  bypasses it by accessing the path directly.
+
+  Fix: Add before line 51:
+  if not chunks_path.exists():
+      raise FileNotFoundError(f"No BM25 index for '{company}'; run
+  build-index first.")                                                
+                                                                      
+  P2 — _set_random_seeds() resets numpy's global RNG on every encode  
+  call                                                                
+                  
+  dense.py:102 calls _set_random_seeds() inside _encode_texts(). This 
+  runs np.random.seed(0) before every batch of embeddings — including
+  every query at search time. Resetting numpy's global RNG state      
+  per-call has side effects on any other code sharing the process that
+   depends on numpy randomness, and it's wasteful.
+
+  Fix: Remove the call at dense.py:102. Seeds are already set inside  
+  _model() (line 91) which runs once on first load. That's sufficient
+  for determinism.                                                    
+                  
+  P2 — hybrid.py:_load_records_by_doc_id re-reads chunks.jsonl on     
+  every search() call
+                                                                      
+  hybrid.py:59-67 opens and fully parses chunks.jsonl per company per 
+  search. For hackerrank that's 1512 JSON records per query. Warm
+  search is 38ms so it's within budget, but this is wasted I/O on hot 
+  paths. The dense and BM25 indices cache their corpus; the record
+  lookup table does not.
+
+  Fix: Move the record map to a lru_cache or module-level lazy        
+  dictionary keyed by company, invalidated on corpus hash change (same
+   pattern as dense.py's load_or_build_embeddings). Deferred to next  
+  round is acceptable given the 200ms budget is met.
+
+Agent Response Summary:
+Fixed all four review items. Moved the dense embedding model string into code/config.py as DENSE_MODEL, replaced dense.py references, and kept model-cache metadata compatible. Added a friendly missing chunks.jsonl guard in BM25 before stat(), removed per-query random seed resets from dense encoding, and cached hybrid passage records by company plus manifest corpus hash. Verified retrieval tests, full pytest, build-index cache-hit output, Visa smoke retrieval, and warm hybrid latency.
+
+Actions:
+* Read code/retrieval/dense.py, code/retrieval/bm25.py, code/retrieval/hybrid.py, and code/config.py
+* Edited code/config.py, code/retrieval/dense.py, code/retrieval/bm25.py, code/retrieval/hybrid.py, .gitignore, build_index_stdout.txt, and log.txt
+* Ran .venv/bin/pytest code/tests/test_retrieval.py -q: 4 passed
+* Ran rg -n "BAAI/bge|MODEL_NAME|np\\.random\\.seed\\(0\\)" code
+* Ran .venv/bin/python -m code.main build-index: dense cache hit for all companies
+* Ran .venv/bin/pytest -q: 11 passed
+* Ran .venv/bin/python -m code.main retrieve --company Visa --query "stolen travelers cheque": top 3 travelers-cheques passages
+* Measured warm hybrid retrieval: warm_hybrid_seconds=0.0359
+* Restored tracked build_index_stdout.txt after detecting an unintended deletion and re-added ignore rules for generated cache artifacts
+
+Context:
+tool=Codex
+branch=hybrid-retrieval
 repo_root=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
 worktree=main
 parent_agent=none

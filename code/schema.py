@@ -53,6 +53,9 @@ class Passage(BaseModel):
     last_updated: str | None = None
     heading: str | None = None
     text: str
+    bm25_score: float | None = None
+    dense_score: float | None = None
+    fused_score: float | None = None
 
 
 class AnswerDraft(BaseModel):

@@ -11,6 +11,7 @@ SUPPORT_TICKETS_DIR: Final[Path] = ROOT_DIR / "support_tickets"
 OUTPUT_CSV: Final[Path] = SUPPORT_TICKETS_DIR / "output.csv"
 
 MODEL: Final[str] = "claude-sonnet-4-6"
+DENSE_MODEL: Final[str] = "BAAI/bge-base-en-v1.5"
 TEMP: Final[int] = 0
 
 CHUNK_TOKENS: Final[int] = 900
