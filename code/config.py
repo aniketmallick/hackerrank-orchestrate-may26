@@ -13,6 +13,11 @@ OUTPUT_CSV: Final[Path] = SUPPORT_TICKETS_DIR / "output.csv"
 MODEL: Final[str] = "claude-sonnet-4-6"
 DENSE_MODEL: Final[str] = "BAAI/bge-base-en-v1.5"
 TEMP: Final[int] = 0
+EVAL_TZ: Final[str] = "Asia/Kolkata"
+COST_RATES_USD_PER_MTOK: Final[dict[str, dict[str, float]]] = {
+    MODEL: {"input": 3.0, "output": 15.0},
+    "default": {"input": 3.0, "output": 15.0},
+}
 
 CHUNK_TOKENS: Final[int] = 900
 OVERLAP: Final[int] = 120
@@ -35,6 +40,11 @@ REQUEST_TYPES: Final[tuple[str, ...]] = (
     "bug",
     "invalid",
 )
+DEFAULT_PIPELINE_FLAGS: Final[dict[str, bool]] = {
+    "no_routing": False,
+    "no_rerank": False,
+    "no_validator": False,
+}
 FINAL_OUTPUT_HEADER: Final[tuple[str, ...]] = (
     "issue",
     "subject",
