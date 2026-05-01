@@ -1,0 +1,30 @@
+{
+  "corpus_hash": "02a4ac2586c7103d13d6b8bb360ecd9e056947a3bc42abdc8fd34570133039ad",
+  "doc_ids": [
+    "3b1dbe33abe2",
+    "e79f2e67835e",
+    "3aa1db4c4f28",
+    "51db72f5116b",
+    "d497ec6d1069",
+    "aaf4bf6e6926",
+    "5b1ddcadc76a",
+    "b5005f702bd0",
+    "5413c5793aeb",
+    "bad72061cac2",
+    "985380411814",
+    "00ea01c43195",
+    "6c3751a586b4",
+    "c76ef1b3fb30",
+    "e74f0f1c6d55",
+    "54f678fdddd9",
+    "1c7db565f784",
+    "200bafb83e2f",
+    "e5e861fc62fc",
+    "c43cc99bcd53",
+    "b6b46dc525b5",
+    "5c86307da39b",
+    "3146a9798992",
+    "140f4ad8c4ba"
+  ],
+  "model": "BAAI/bge-base-en-v1.5"
+}
