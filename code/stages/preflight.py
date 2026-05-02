@@ -68,13 +68,18 @@ INTENT_WORDS = {
 }
 ADVERSARIAL_PHRASES = (
     "delete all files",
+    "delete files",
     "give me malware",
     "write a virus",
     "write me malware",
     "create malware",
+    "ransomware",
+    "exploit",
+    "jailbreak",
+    "destroy",
     "steal credentials",
     "exfiltrate",
-    "bypass owner approval",
+    "bypass security",
 )
 
 

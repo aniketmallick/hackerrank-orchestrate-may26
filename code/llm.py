@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 _USAGE: dict[str, int] = {"calls": 0, "input_tokens": 0, "output_tokens": 0}
+_LAST_MODEL = MODEL
 _CLIENT: Anthropic | None = None
 
 
@@ -35,16 +36,25 @@ def health_check() -> None:
 def get_usage() -> dict[str, int | str]:
     """Return per-process Anthropic usage counters."""
 
-    return {"model": MODEL, **_USAGE}
+    return {"model": _LAST_MODEL, **_USAGE}
 
 
 def reset_usage() -> None:
     """Reset per-process Anthropic usage counters."""
 
+    global _LAST_MODEL
+    _LAST_MODEL = MODEL
     _USAGE.update({"calls": 0, "input_tokens": 0, "output_tokens": 0})
 
 
-def call_structured(system: str, user: str, tool_schema: dict[str, Any], max_tokens: int = 1024) -> dict[str, Any]:
+def call_structured(
+    system: str,
+    user: str,
+    tool_schema: dict[str, Any],
+    max_tokens: int = 1024,
+    *,
+    model: str = MODEL,
+) -> dict[str, Any]:
     """Call Anthropic tool use and return the forced JSON object."""
 
     tool = {
@@ -58,7 +68,7 @@ def call_structured(system: str, user: str, tool_schema: dict[str, Any], max_tok
     for attempt in range(5):
         try:
             response = _get_client().messages.create(
-                model=MODEL,
+                model=model,
                 max_tokens=max_tokens,
                 temperature=TEMP,
                 system=system,
@@ -66,7 +76,7 @@ def call_structured(system: str, user: str, tool_schema: dict[str, Any], max_tok
                 tools=[tool],
                 tool_choice={"type": "tool", "name": "structured_output"},
             )
-            _record_usage(response)
+            _record_usage(response, model)
             for block in response.content:
                 if getattr(block, "type", None) == "tool_use":
                     tool_input = getattr(block, "input", None)
@@ -85,10 +95,12 @@ def call_structured(system: str, user: str, tool_schema: dict[str, Any], max_tok
     raise RuntimeError("Anthropic structured call failed after retries.") from last_error
 
 
-def _record_usage(response: Any) -> None:
+def _record_usage(response: Any, model: str) -> None:
+    global _LAST_MODEL
     usage = getattr(response, "usage", None)
     input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
     output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+    _LAST_MODEL = model
     _USAGE["calls"] += 1
     _USAGE["input_tokens"] += input_tokens
     _USAGE["output_tokens"] += output_tokens

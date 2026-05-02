@@ -14,7 +14,7 @@ loaded_code_module = sys.modules.get("code")
 if loaded_code_module is not None and not hasattr(loaded_code_module, "__path__"):
     del sys.modules["code"]
 
-from code.config import CHUNK_TOKENS
+from code.config import CHUNK_TOKENS, VISA_CHUNK_TOKENS, VISA_OVERLAP
 from code.retrieval.corpus import (
     ParsedDocument,
     build_company_index,
@@ -144,6 +144,31 @@ Use the support form.
     assert document.title == "Visa Sample"
     assert document.source_url == "https://example.com/visa"
     assert document.last_updated == "2026-05-01T00:00:00Z"
+
+
+def test_visa_chunking_preserves_citicorp_contact_block() -> None:
+    """P0-B: Citicorp phone block must not be split across chunks even in large documents."""
+
+    citicorp_block = (
+        "### Citicorp\n\n"
+        "Freephone: 1-800-645-6556\n"
+        "Collect: 1-813-623-1709\n"
+        "Monday-Friday, 6:30 am to 2:30 pm EST\n"
+        "Automated cheque verification is available 24 hours a day."
+    )
+    # Pad the body so the section exceeds VISA_CHUNK_TOKENS to force splitting.
+    padding = "Additional bank information paragraph.\n\n" * 80
+    body = f"## Report a lost cheque\n\n{padding}{citicorp_block}\n\n{padding}"
+
+    chunks = chunk_markdown(body, max_tokens=VISA_CHUNK_TOKENS, overlap_chars=VISA_OVERLAP, protect_contacts=True)
+
+    freephone_chunks = [(h, t) for h, t in chunks if "1-800-645-6556" in t]
+    collect_chunks = [(h, t) for h, t in chunks if "1-813-623-1709" in t]
+
+    assert freephone_chunks, "Freephone line must appear in at least one chunk"
+    assert collect_chunks, "Collect line must appear in at least one chunk"
+    for _heading, text in freephone_chunks:
+        assert "1-813-623-1709" in text, "Citicorp Freephone and Collect must be in the same chunk"
 
 
 def test_missing_company_directory_warns_and_returns_zero(tmp_path, caplog) -> None:  # type: ignore[no-untyped-def]

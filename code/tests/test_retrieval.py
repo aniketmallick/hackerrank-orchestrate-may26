@@ -74,3 +74,14 @@ def test_hybrid_fanout_for_None() -> None:
 
     assert len(passages) > 0
     assert len(companies) >= 2
+
+
+def test_bm25_only_search_returns_passages_without_dense_scores() -> None:
+    """The no-rerank path uses lexical retrieval only."""
+
+    passages = hybrid.search_bm25_only("lost stolen visa card", company="Visa")
+
+    assert passages
+    assert passages[0].bm25_score is not None
+    assert passages[0].dense_score is None
+    assert passages[0].fused_score == 0.0
