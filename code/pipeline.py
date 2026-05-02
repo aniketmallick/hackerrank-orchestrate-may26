@@ -6,12 +6,13 @@ from collections.abc import Mapping
 from typing import Any
 
 from code import llm
-from code.config import DEFAULT_PIPELINE_FLAGS
+from code.config import DEFAULT_PIPELINE_FLAGS, VISA_FUSED_K
 from code.retrieval import hybrid
 from code.schema import AnswerDraft, FinalOutput, Passage, PreflightFlags, RoutingDecision, TicketInput
 from code.stages import grounding, preflight, routing, validator
 
-OOS_TEMPLATE = "I can't help with requests to create malware, bypass controls, or perform destructive actions."
+BENIGN_OOS_TEMPLATE = "I am sorry, this is out of scope from my capabilities"
+ADVERSARIAL_TEMPLATE = "I can't help with requests to create malware, bypass controls, or perform destructive actions."
 ESCALATE_TEMPLATE = (
     "I need to escalate this to a human support specialist because the ticket includes sensitive live identifiers."
 )
@@ -41,7 +42,7 @@ class Pipeline:
             return self._short_circuit(flags, "replied", "invalid", "", "Happy to help.", "pleasantry")
 
         if flags.is_adversarial:
-            return self._short_circuit(flags, "replied", "invalid", "", OOS_TEMPLATE, "adversarial")
+            return self._short_circuit(flags, "replied", "invalid", "", ADVERSARIAL_TEMPLATE, "adversarial")
 
         if flags.has_live_id:
             return self._final(
@@ -75,10 +76,31 @@ class Pipeline:
         if route.scope == "pleasantry":
             return self._short_circuit(flags, "replied", route.request_type or "invalid", "", "Happy to help.", "pleasantry")
 
-        if route.scope in {"adversarial", "out_of_scope"}:
-            return self._short_circuit(flags, "replied", route.request_type or "invalid", "", OOS_TEMPLATE, "adversarial")
+        if route.scope == "out_of_scope_benign":
+            return self._short_circuit(
+                flags,
+                "replied",
+                route.request_type or "invalid",
+                "",
+                BENIGN_OOS_TEMPLATE,
+                "out_of_scope",
+            )
 
-        passages = _retrieve(_query(ticket), company=_retrieval_company(flags), no_rerank=self.flags.get("no_rerank", False))
+        if route.scope == "adversarial":
+            return self._short_circuit(
+                flags,
+                "replied",
+                route.request_type or "invalid",
+                "",
+                ADVERSARIAL_TEMPLATE,
+                "adversarial",
+            )
+
+        passages = _retrieve(
+            _query(ticket),
+            company=_retrieval_company(flags),
+            no_rerank=self.flags.get("no_rerank", False),
+        )
         self._trace(
             "hybrid_retrieval",
             {
@@ -223,9 +245,10 @@ def _retrieval_company(flags: PreflightFlags) -> str | None:
 
 
 def _retrieve(query: str, company: str | None, no_rerank: bool) -> list[Passage]:
+    fused_k = VISA_FUSED_K if company == "Visa" else None
     if no_rerank:
-        return hybrid.search_bm25_only(query, company=company)
-    return hybrid.search(query, company=company)
+        return hybrid.search_bm25_only(query, company=company, fused_k=fused_k)
+    return hybrid.search(query, company=company, fused_k=fused_k)
 
 
 def _preflight_route(flags: PreflightFlags) -> RoutingDecision:
@@ -303,12 +326,12 @@ def _normalize_supported_status(draft: AnswerDraft, passages: list[Passage], fla
 
 
 def _derive_product_area(cited_doc_ids: list[str], passages: list[Passage]) -> str:
-    cited = {doc_id for doc_id in cited_doc_ids}
-    candidates = [passage for passage in passages if passage.doc_id in cited]
-    if not candidates:
-        return ""
-    top = max(candidates, key=lambda passage: (passage.fused_score or 0.0, passage.bm25_score or 0.0, passage.dense_score or 0.0))
-    return top.product_area_key or ""
+    passages_by_doc_id = {passage.doc_id: passage for passage in passages}
+    for doc_id in cited_doc_ids:
+        passage = passages_by_doc_id.get(doc_id)
+        if passage is not None:
+            return passage.product_area_key or ""
+    return ""
 
 
 def _valid_citations(cited_doc_ids: list[str], passages: list[Passage]) -> list[str]:

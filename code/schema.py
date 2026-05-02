@@ -11,7 +11,7 @@ from code.config import FINAL_OUTPUT_HEADER
 CompanyInput = Literal["HackerRank", "Claude", "Visa", "None"]
 Status = Literal["replied", "escalated"]
 RequestType = Literal["product_issue", "feature_request", "bug", "invalid"]
-RoutingScope = Literal["in_scope", "out_of_scope", "pleasantry", "adversarial", "ambiguous_underspecified"]
+RoutingScope = Literal["in_scope", "out_of_scope_benign", "pleasantry", "adversarial", "ambiguous_underspecified"]
 Sensitivity = Literal["low", "medium", "high"]
 
 

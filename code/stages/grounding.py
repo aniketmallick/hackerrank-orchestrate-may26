@@ -62,6 +62,9 @@ def _system_prompt(doc_ids: list[str], strict: bool) -> str:
             "Allowed doc_ids: " + ", ".join(doc_ids),
             "Set no_evidence=true if the passages do not support an answer.",
             "For multi-intent tickets, answer the supported intents and explicitly decline unsupported or unanswerable intents in the same response.",
+            "If the user mentions a specific bank, card issuer, country, or branded product, you MUST surface the exact phone numbers, URLs, or contact identifiers from the cited passages verbatim — do not paraphrase contact information into generic guidance.",
+            "A multi-step procedure is NOT a reason to escalate. If the cited passages contain the full procedure including any prerequisite step (e.g. 'first reset your password, then go to settings'), enumerate every step in your response and set status_proposal=replied. Escalate only when: the user explicitly requires authority you cannot grant (account restoration, billing lookup by transaction ID), the cited passages do not contain a complete procedure, or the situation is identity-theft-active, fraud-in-progress, or other irreversible risk requiring human action.",
+            "Set request_type=feature_request ONLY when the user asks for functionality that does not currently exist in the product. Questions about HOW to use existing features, best-practice guidance, or how to perform documented procedures are request_type=product_issue.",
             strict_line,
         ]
     )

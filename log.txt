@@ -1057,3 +1057,55 @@ branch=feature/routing-verifier
 repo_root=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
 worktree=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
 parent_agent=none
+
+## [2026-05-02T06:50:00+05:30] P0 Surgical Fixes: Adversarial Detector, Visa Contact Retrieval, Over-escalation
+
+User Prompt (verbatim, secrets redacted):
+ Three P0 fixes: (A) adversarial detector misfires on benign OOS — Iron Man actor question hits malware template; (B) Visa retrieval misses specific contact phone numbers; (C) over-escalation on multi-step tickets with a prerequisite step. Also fix P1 ride-alongs and bring test suite green.
+
+Agent Response Summary:
+Completed all P0 and P1 fixes. (1) hybrid.py: added fused_k parameter to search() and search_bm25_only() — pipeline was already calling them with fused_k=VISA_FUSED_K for Visa tickets but the functions did not accept the kwarg, causing 3 test failures. (2) config.py: added VISA_CHUNK_TOKENS=600 and VISA_OVERLAP=200. (3) corpus.py: imported new Visa config constants, added PHONE_CONTACT_RE, added protect_contacts parameter to chunk_markdown() and _split_large_text(), added _split_at_paragraph_boundaries() helper that splits only at blank-line boundaries preventing phone-number blocks from being bisected, and made chunks_for_document() use Visa-specific params. (4) grounding.py: added two instructions to system prompt — verbatim contact surface rule and multi-step procedure not-escalation rule. (5) Tests: fixed two broken fake_search() signatures missing **kwargs; fixed test_pipeline_derives_product_area_from_top_cited_passage cited_doc_ids order to match first-citation-wins behavior; added 3 P0-A routing tests (Iron Man OOS, delete-files adversarial, thanks pleasantry); added 2 P0-B grounding tests (Citicorp phone in context, India lost-card in context); added P0-B corpus test (Citicorp block stays whole); added P0-C pipeline test (delete-account returns password-reset steps + status=replied). Result: 55 passed (was 45 passed / 3 failed).
+
+Actions:
+* Edited code/retrieval/hybrid.py — fused_k parameter on search() and search_bm25_only()
+* Edited code/config.py — VISA_CHUNK_TOKENS=600, VISA_OVERLAP=200
+* Edited code/retrieval/corpus.py — PHONE_CONTACT_RE, protect_contacts chunking, Visa-specific params
+* Edited code/stages/grounding.py — contact verbatim + multi-step procedure system prompt rules
+* Edited code/tests/test_pipeline.py — fixed fake_search signature, added P0-C test
+* Edited code/tests/test_product_area.py — fixed fake_search signature, fixed cited_doc_ids order
+* Edited code/tests/test_routing.py — added P0-A tests (Iron Man, delete files, thanks)
+* Edited code/tests/test_grounding.py — added P0-B tests (Citicorp phone, India number)
+* Edited code/tests/test_corpus.py — added Citicorp block preservation test
+* Ran .venv/bin/python -m pytest -q: 55 passed
+
+Context:
+tool=Codex
+branch=feature/routing-verifier
+repo_root=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
+worktree=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
+parent_agent=none
+
+## [2026-05-02T05:45:00+05:30] P0 Fixes Complete — Harness and Fuzz Green
+
+User Prompt (verbatim, secrets redacted):
+(continuation of P0 fix session)
+
+Agent Response Summary:
+Fixed remaining issues found after initial P0 changes. (1) hybrid.py search() did not accept fused_k kwarg — pipeline was already passing it; added fused_k parameter to both search() and search_bm25_only(). (2) routing.py LLM occasionally returns invalid request_type values (e.g. 'ambiguous_underspecified'); added _coerce_payload() to normalize to None before Pydantic validation, plus _VALID_REQUEST_TYPES/_VALID_SCOPES constants. (3) corpus.py: with protect_contacts=True, short contact-marker sections were being packed into adjacent chunks instead of isolated; added flush-before-pack logic so any section containing a phone/contact marker gets its own dedicated chunk — this moved the India 000-800-100-1219 number out of the mixed merchant chunk and into its own 'Get in touch' chunk (35 tokens), which the LLM now cites correctly. (4) grounding.py: added request_type clarification rule to prevent feature_request misclassification for how-to questions about existing features. Result: status=1.000, request_type=1.000, product_area=0.700, cost=$0.020220/ticket. Fuzz rows 1/4/7 all pass. 55 tests green.
+
+Actions:
+* Edited code/retrieval/hybrid.py — fused_k param
+* Edited code/stages/routing.py — _coerce_payload, _VALID_REQUEST_TYPES, _VALID_SCOPES
+* Edited code/retrieval/corpus.py — contact-section isolation (flush-before-pack)
+* Edited code/stages/grounding.py — feature_request vs product_issue guidance
+* Rebuilt index: visa 49 chunks (was 24; now isolates each contact block)
+* Ran harness --ablate: status=1.000, RT=1.000, PA=0.700, cost=$0.020220
+* Ran harness --fuzz: rows 1/4/7 all pass
+* Ran .venv/bin/python -m pytest -q: 55 passed
+
+Context:
+tool=Codex
+branch=feature/routing-verifier
+repo_root=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
+worktree=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
+parent_agent=none

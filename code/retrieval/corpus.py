@@ -14,13 +14,18 @@ from typing import Any, Iterable
 import yaml
 from tqdm import tqdm
 
-from code.config import CHUNK_TOKENS, COMPANIES, DATA_DIR, INDEX_DIR, OVERLAP, PRODUCT_AREA_LABELS
+from code.config import CHUNK_TOKENS, COMPANIES, DATA_DIR, INDEX_DIR, OVERLAP, PRODUCT_AREA_LABELS, VISA_CHUNK_TOKENS, VISA_OVERLAP
 
 logger = logging.getLogger(__name__)
 
 HEADING_RE = re.compile(r"^(#{2,3})\s+(.+?)\s*$", re.MULTILINE)
 H1_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 CHARS_PER_TOKEN = 4
+# Matches lines containing phone numbers or explicit contact markers.
+PHONE_CONTACT_RE = re.compile(
+    r"(?:Freephone|Collect\s*:|Call\s+|\b\+?\d[\d\s()\-\.]{6,}\d\b)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -153,8 +158,14 @@ def chunk_markdown(
     body: str,
     max_tokens: int = CHUNK_TOKENS,
     overlap_chars: int = OVERLAP,
+    *,
+    protect_contacts: bool = False,
 ) -> list[tuple[str | None, str]]:
-    """Split markdown by H2/H3 sections and pack chunks below max_tokens."""
+    """Split markdown by H2/H3 sections and pack chunks below max_tokens.
+
+    When protect_contacts=True, chunk boundaries never bisect a paragraph that
+    contains a phone number or explicit contact marker (Freephone, Collect, Call).
+    """
 
     max_chars = max_tokens * CHARS_PER_TOKEN
     sections = _split_sections(body)
@@ -172,7 +183,19 @@ def chunk_markdown(
                 chunks.append((current_heading, current_text.strip()))
                 current_text = ""
                 current_heading = None
-            chunks.extend((heading, part) for part in _split_large_text(section_text, max_chars, overlap_chars))
+            chunks.extend(
+                (heading, part)
+                for part in _split_large_text(section_text, max_chars, overlap_chars, protect_contacts=protect_contacts)
+            )
+            continue
+
+        # When contact protection is on, flush the current buffer before packing
+        # in any section that itself contains a phone/contact marker so that the
+        # contact info gets its own dedicated chunk (easier for the LLM to cite).
+        if protect_contacts and current_text and PHONE_CONTACT_RE.search(section_text):
+            chunks.append((current_heading, current_text.strip()))
+            current_text = section_text
+            current_heading = heading
             continue
 
         proposed = _join_chunk_text(current_text, section_text)
@@ -193,7 +216,10 @@ def chunk_markdown(
         if estimate_tokens(text) <= max_tokens:
             bounded_chunks.append((heading, text))
         else:
-            bounded_chunks.extend((heading, part) for part in _split_large_text(text, max_chars, overlap_chars))
+            bounded_chunks.extend(
+                (heading, part)
+                for part in _split_large_text(text, max_chars, overlap_chars, protect_contacts=protect_contacts)
+            )
     return bounded_chunks
 
 
@@ -224,8 +250,14 @@ def build_company_index(company: str, data_dir: Path = DATA_DIR, index_dir: Path
 def chunks_for_document(document: ParsedDocument) -> list[CorpusChunk]:
     """Create stable chunk records for a parsed markdown document."""
 
+    is_visa = document.company == "visa"
+    max_tokens = VISA_CHUNK_TOKENS if is_visa else CHUNK_TOKENS
+    overlap_chars = VISA_OVERLAP if is_visa else OVERLAP
+
     chunks: list[CorpusChunk] = []
-    for chunk_idx, (heading, text) in enumerate(chunk_markdown(document.body)):
+    for chunk_idx, (heading, text) in enumerate(
+        chunk_markdown(document.body, max_tokens=max_tokens, overlap_chars=overlap_chars, protect_contacts=is_visa)
+    ):
         doc_id = stable_doc_id(document.rel_path, chunk_idx)
         chunks.append(
             CorpusChunk(
@@ -342,7 +374,11 @@ def _split_sections(body: str) -> list[tuple[str | None, str]]:
     return sections
 
 
-def _split_large_text(text: str, max_chars: int, overlap_chars: int) -> list[str]:
+def _split_large_text(
+    text: str, max_chars: int, overlap_chars: int, *, protect_contacts: bool = False
+) -> list[str]:
+    if protect_contacts:
+        return _split_at_paragraph_boundaries(text, max_chars, overlap_chars)
     parts: list[str] = []
     start = 0
     normalized = text.strip()
@@ -359,6 +395,30 @@ def _split_large_text(text: str, max_chars: int, overlap_chars: int) -> list[str
             break
         start = max(end - overlap_chars, start + 1)
     return parts
+
+
+def _split_at_paragraph_boundaries(text: str, max_chars: int, overlap_chars: int) -> list[str]:
+    """Split at blank-line boundaries, keeping phone-containing paragraphs whole."""
+    paragraphs = re.split(r"\n\s*\n", text.strip())
+    parts: list[str] = []
+    current = ""
+
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+        candidate = f"{current}\n\n{para}" if current else para
+        if current and len(candidate) > max_chars:
+            parts.append(current.strip())
+            prefix = _overlap_suffix(current, overlap_chars)
+            current = f"{prefix}\n\n{para}".strip() if prefix else para
+        else:
+            current = candidate
+
+    if current.strip():
+        parts.append(current.strip())
+
+    return parts or [text.strip()]
 
 
 def _join_chunk_text(left: str, right: str) -> str:

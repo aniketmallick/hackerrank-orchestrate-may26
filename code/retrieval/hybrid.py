@@ -24,9 +24,10 @@ def reciprocal_rank_fusion(rankings: list[list[DocId]], c: int = RRF_C) -> list[
     return sorted(scores.items(), key=lambda item: (-item[1], item[0]))
 
 
-def search(query: str, company: str | None) -> list[Passage]:
+def search(query: str, company: str | None, fused_k: int | None = None) -> list[Passage]:
     """Return top fused passages with per-source BM25, dense, and fused scores."""
 
+    k = fused_k if fused_k is not None else FUSED_K
     companies = list(COMPANIES) if company is None else [_normalize_company(company)]
     rankings: list[list[DocId]] = []
     bm25_scores: dict[DocId, float] = {}
@@ -44,7 +45,7 @@ def search(query: str, company: str | None) -> list[Passage]:
         rankings.append([doc_id for doc_id, _score in bm25_results])
         rankings.append([doc_id for doc_id, _score in dense_results])
 
-    fused = reciprocal_rank_fusion(rankings, c=RRF_C)[:FUSED_K]
+    fused = reciprocal_rank_fusion(rankings, c=RRF_C)[:k]
     return [
         _passage_from_record(
             records_by_doc_id[doc_id],
@@ -57,9 +58,10 @@ def search(query: str, company: str | None) -> list[Passage]:
     ]
 
 
-def search_bm25_only(query: str, company: str | None) -> list[Passage]:
+def search_bm25_only(query: str, company: str | None, fused_k: int | None = None) -> list[Passage]:
     """Return top BM25 passages without dense retrieval or RRF fusion."""
 
+    k = fused_k if fused_k is not None else FUSED_K
     companies = list(COMPANIES) if company is None else [_normalize_company(company)]
     records_by_doc_id: dict[DocId, dict[str, Any]] = {}
     ranked: list[tuple[DocId, float]] = []
@@ -69,7 +71,7 @@ def search_bm25_only(query: str, company: str | None) -> list[Passage]:
     ranked.sort(key=lambda item: (-item[1], item[0]))
     return [
         _passage_from_record(records_by_doc_id[doc_id], bm25_score=score, dense_score=None, fused_score=0.0)
-        for doc_id, score in ranked[:FUSED_K]
+        for doc_id, score in ranked[:k]
         if doc_id in records_by_doc_id
     ]
 

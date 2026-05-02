@@ -62,7 +62,7 @@ def test_pipeline_derives_product_area_from_top_cited_passage(monkeypatch) -> No
         "code.pipeline.grounding.answer",
         lambda *_args, **_kwargs: AnswerDraft(
             response="This answer is grounded in the cited screen passage.",
-            cited_doc_ids=["low", "high"],
+            cited_doc_ids=["high", "low"],  # first cited → screen (first-citation wins)
             product_area="wrong_llm_label",
             status_proposal="replied",
             request_type="product_issue",
@@ -94,7 +94,7 @@ def test_company_set_sample_rows_derive_expected_product_area(monkeypatch) -> No
 
     sample_rows = _company_set_sample_rows()
 
-    def fake_search(query: str, company: str | None):
+    def fake_search(query: str, company: str | None, **_kwargs):
         for prefix, (_label, rel_path) in expected_by_issue_prefix.items():
             if prefix in query:
                 return [_passage("doc-1", rel_path, corpus.product_area_key_for_rel_path(rel_path), fused_score=0.05)]

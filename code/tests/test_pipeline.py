@@ -210,7 +210,7 @@ def test_pipeline_uses_routing_resolved_company(monkeypatch) -> None:
         ),
     )
 
-    def fake_search(_query: str, company: str | None):
+    def fake_search(_query: str, company: str | None, **_kwargs):
         captured["company"] = company
         return passages
 
@@ -275,3 +275,45 @@ def test_pipeline_escalates_ambiguous_without_confident_retrieval(monkeypatch) -
 
     assert result.status == "escalated"
     assert "ambiguous_underspecified" in result.justification
+
+
+def test_pipeline_delete_account_returns_procedure_not_escalation(monkeypatch) -> None:
+    """P0-C: delete-account via Google login → password reset steps + status=replied."""
+
+    import re as _re
+
+    passage = _passage("doc-hr-1", "settings").model_copy(
+        update={
+            "text": (
+                "To delete your HackerRank account: "
+                "Step 1 - Forgot your password? Go to the login page and click 'Forgot password' to reset it. "
+                "Step 2 - After password is set, go to Settings > Account > Delete Account."
+            )
+        }
+    )
+
+    monkeypatch.setattr("code.pipeline.hybrid.search", lambda *_a, **_kw: [passage])
+    monkeypatch.setattr("code.pipeline.hybrid.search_bm25_only", lambda *_a, **_kw: [passage])
+    monkeypatch.setattr(
+        "code.stages.grounding.llm.call_structured",
+        lambda *_args, **_kwargs: {
+            "response": (
+                "To delete your account, first reset your password by clicking 'Forgot password' on the login page. "
+                "After resetting, go to Settings > Account > Delete Account."
+            ),
+            "cited_doc_ids": ["doc-hr-1"],
+            "status_proposal": "replied",
+            "request_type": "product_issue",
+            "no_evidence": False,
+        },
+    )
+
+    ticket = TicketInput(
+        issue="I signed up using google login and cannot set a password. Please delete my account.",
+        subject="Delete account",
+        company="HackerRank",
+    )
+    result = Pipeline(flags={"no_routing": True}).run(ticket)
+
+    assert _re.search(r"(?i)forgot|reset|password", result.response)
+    assert result.status == "replied"

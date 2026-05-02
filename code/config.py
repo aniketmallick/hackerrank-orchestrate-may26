@@ -27,9 +27,12 @@ COST_RATES_USD_PER_MTOK: Final[dict[str, dict[str, float]]] = {
 
 CHUNK_TOKENS: Final[int] = 900
 OVERLAP: Final[int] = 120
+VISA_CHUNK_TOKENS: Final[int] = 600
+VISA_OVERLAP: Final[int] = 200
 BM25_K: Final[int] = 20
 DENSE_K: Final[int] = 20
 FUSED_K: Final[int] = 6
+VISA_FUSED_K: Final[int] = 8
 RRF_C: Final[int] = 60
 
 COMPANIES: Final[tuple[str, ...]] = ("hackerrank", "claude", "visa")
