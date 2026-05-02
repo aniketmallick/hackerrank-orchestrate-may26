@@ -11,6 +11,8 @@ from code.config import FINAL_OUTPUT_HEADER
 CompanyInput = Literal["HackerRank", "Claude", "Visa", "None"]
 Status = Literal["replied", "escalated"]
 RequestType = Literal["product_issue", "feature_request", "bug", "invalid"]
+RoutingScope = Literal["in_scope", "out_of_scope", "pleasantry", "adversarial", "ambiguous_underspecified"]
+Sensitivity = Literal["low", "medium", "high"]
 
 
 class TicketInput(BaseModel):
@@ -44,11 +46,12 @@ class PreflightFlags(BaseModel):
 class RoutingDecision(BaseModel):
     """Classification and routing decision for a ticket."""
 
-    company: CompanyInput | None = None
-    status: Status
-    product_area: str
-    request_type: RequestType
-    justification: str
+    scope: RoutingScope
+    intents: list[str] = Field(default_factory=list)
+    sensitivity: Sensitivity = "low"
+    resolved_company: CompanyInput | None = None
+    request_type: RequestType | None = None
+    rationale: str = ""
 
 
 class Passage(BaseModel):
@@ -61,6 +64,7 @@ class Passage(BaseModel):
     source_url: str | None = None
     breadcrumbs: list[str] = Field(default_factory=list)
     last_updated: str | None = None
+    product_area_key: str = ""
     heading: str | None = None
     text: str
     bm25_score: float | None = None

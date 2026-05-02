@@ -57,6 +57,23 @@ def search(query: str, company: str | None) -> list[Passage]:
     ]
 
 
+def search_bm25_only(query: str, company: str | None) -> list[Passage]:
+    """Return top BM25 passages without dense retrieval or RRF fusion."""
+
+    companies = list(COMPANIES) if company is None else [_normalize_company(company)]
+    records_by_doc_id: dict[DocId, dict[str, Any]] = {}
+    ranked: list[tuple[DocId, float]] = []
+    for company_name in companies:
+        records_by_doc_id.update(_load_records_by_doc_id(company_name))
+        ranked.extend(bm25.search(query, company_name, BM25_K))
+    ranked.sort(key=lambda item: (-item[1], item[0]))
+    return [
+        _passage_from_record(records_by_doc_id[doc_id], bm25_score=score, dense_score=None, fused_score=0.0)
+        for doc_id, score in ranked[:FUSED_K]
+        if doc_id in records_by_doc_id
+    ]
+
+
 def _load_records_by_doc_id(company: str) -> dict[DocId, dict[str, Any]]:
     return dict(_cached_records_by_doc_id(company, _manifest_corpus_hash()))
 
@@ -98,6 +115,7 @@ def _passage_from_record(
         source_url=record.get("source_url"),
         breadcrumbs=list(record.get("breadcrumbs") or []),
         last_updated=record.get("last_updated"),
+        product_area_key=str(record.get("product_area_key") or ""),
         heading=record.get("heading"),
         text=str(record["text"]),
         bm25_score=bm25_score,

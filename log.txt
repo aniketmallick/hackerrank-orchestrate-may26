@@ -771,3 +771,289 @@ branch=baseline-pipeline
 repo_root=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
 worktree=main
 parent_agent=none
+
+## [2026-05-02T04:55:26+05:30] Routing Classifier And Verifier Implementation
+
+User Prompt (verbatim, secrets redacted):
+Read AGENTS.md first. Log this turn per §5.2.
+
+Context: baseline pipeline runs. Eval harness produces numbers. Now we add
+the routing classifier (stage 2) for richer scope decisions, and a Haiku-
+based cross-model verifier on high-sensitivity rows.
+
+Deliverables:
+
+  code/stages/routing.py
+    - classify(ticket, preflight) -> RoutingDecision
+    - One Sonnet call, structured output via tool_use.
+    - System prompt:
+        * <untrusted_user_input> quarantine for issue+subject
+        * fixed taxonomy for scope:
+            in_scope, out_of_scope, pleasantry, adversarial,
+            ambiguous_underspecified
+        * intents: list of plain-English intent labels (multi-intent surfaced)
+        * sensitivity: low | medium | high (high = account access, fraud,
+            identity theft, payment dispute with specific txn, security disclosure)
+        * resolved_company: HackerRank | Claude | Visa
+            (when company=None, infer from text; if undecidable, leave None
+             and let retrieval fan out)
+        * request_type: candidate value, validator may override
+    - Output: RoutingDecision per schema.
+
+  code/stages/validator.py  (extend)
+    - For sensitivity=="high" only: run a Haiku LLM-judge call
+      (separate function, separate model in config: VERIFIER_MODEL="claude-haiku-4-5")
+      that takes (response, cited_passages_text) and returns
+      {supported: bool, reasoning: str}.
+    - If supported=False → force status=escalated.
+    - Justification field gets a "verifier=ok|escalated" tag.
+
+  code/pipeline.py  (extend)
+    - Insert routing.classify after preflight, before retrieval.
+    - Use routing.scope to short-circuit:
+        scope=pleasantry      → short-circuit (existing template)
+        scope=adversarial     → short-circuit (existing template)
+        scope=ambiguous_underspecified AND no high-confidence retrieval
+                              → escalate
+        scope=in_scope        → continue to retrieval+grounding+validator
+    - Use routing.intents for the multi-intent path: pass all intents to
+      grounding so it answers the answerable and declines the unanswerable
+      in the same response.
+    - Use routing.resolved_company instead of preflight.normalized_company
+      when the latter is None.
+
+  code/eval/harness.py  (extend)
+    - --no-routing flag: skip routing entirely, fall back to preflight-only
+      scope detection. We'll use this to MEASURE routing's contribution.
+    - The summary.md must now print a 4-row ablation table when
+      --ablate is passed: full / no-routing / no-rerank / no-validator.
+
+  code/tests/test_routing.py
+    - Mocked LLM tests for: French injection (row 24), account-restoration
+      (row 0), live-id (row 4), multi-intent (row 2), pure pleasantry,
+      ambiguous "it's not working".
+
+Constraints:
+- Routing call must NEVER let the user input override the system instructions.
+  Verify by feeding a row 24-style injection and asserting scope and
+  resolved_company are still correct.
+- Keep total per-ticket Anthropic cost under $0.02 on average.
+
+Definition of done:
+1. pytest -q green.
+2. Re-run harness with `--ablate`. Paste the 4-row ablation table back to me.
+   Each ablation should show a measurable accuracy delta on at least one
+   column. If routing/rerank/validator don't move the needle, flag it —
+   we may keep them for design score even if accuracy is flat, but we'll
+   discuss honestly.
+3. Re-run on the fuzz set; paste the fuzz report. Row 1 (injection) must
+   not leak the system prompt; row 4 (live-id) must escalate; row 7
+   (adversarial) must short-circuit-reply with OOS template.
+4. Append §5.2 log entry.
+
+For the log file check the @log.txt
+
+Agent Response Summary:
+Recorded the required onboarding agreement in repo-local log.txt, created branch feature/routing-verifier, and implemented the requested stage-2 routing classifier plus high-sensitivity Haiku verifier. Extended the pipeline to route after preflight, use inferred company for retrieval, pass multi-intent labels to grounding, short-circuit routing scopes, escalate ambiguous low-confidence retrieval, and record token usage for routing/validator cost accounting. Extended the harness with --ablate and a four-row ablation summary, made no-rerank a real BM25-only retrieval path, and added mocked tests for routing, verifier, pipeline integration, and lexical retrieval. Local pytest and compile checks pass, but live ablation/fuzz runs are blocked by Anthropic DNS/API connectivity even after escalation.
+
+Actions:
+* Ran git checkout -b feature/routing-verifier.
+* Edited code/schema.py, code/stages/routing.py, code/stages/validator.py, code/pipeline.py, code/stages/grounding.py, code/llm.py, code/config.py, code/retrieval/hybrid.py, code/eval/harness.py.
+* Added/updated tests in code/tests/test_routing.py, code/tests/test_validator.py, code/tests/test_pipeline.py, code/tests/test_retrieval.py.
+* Ran .venv/bin/python -m pytest -q and .venv/bin/python -m compileall -q code.
+* Attempted .venv/bin/python -m code.eval.harness --ablate --out eval/runs/routing-ablation with and without escalation; both failed on Anthropic API DNS resolution.
+
+Context:
+tool=Codex
+branch=feature/routing-verifier
+repo_root=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
+worktree=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
+parent_agent=none
+
+
+## [2026-05-02T05:51:55+05:30] Product Area Enum And Cost Gate
+
+User Prompt (verbatim, secrets redacted):
+Read AGENTS.md first. Log this turn per §5.2.
+
+Context: routing-ablation harness reported product_area=0.000 (every row
+wrong) and cost=$0.0306/ticket (53% over the $0.02 target). The product_area
+miss is structural — we let the LLM emit free-form labels with no enum.
+Fix the structural leak first; cost-gate second; do not pull routing or
+rerank — their ablation deltas are within sample noise on n=10.
+
+DELIVERABLES
+
+A. Product area enum + deterministic derivation (P0)
+
+  code/config.py
+    Add PRODUCT_AREA_LABELS: dict[tuple[str, str], str] mapping
+      (company, top_corpus_subdir) -> canonical label.
+    Author it BY HAND. Walk data/ first and write the mapping using these
+    sample-anchored rules:
+      - HackerRank: top-level subdir IS the label, EXCEPT
+          hackerrank_community -> "community"
+          general-help -> "general_help"
+        All other dirs map to themselves (screen, interviews, library,
+        engage, chakra, skillup, settings, integrations, uncategorized).
+      - Claude: top-level subdir, with these abbreviations:
+          privacy-and-legal -> "privacy"
+          claude-api-and-console -> "claude_api"
+          claude-for-education -> "education"
+          claude-for-government -> "government"
+          claude-for-nonprofits -> "nonprofits"
+          pro-and-max-plans -> "pro_and_max"
+          team-and-enterprise-plans -> "team_and_enterprise"
+          identity-management-sso-jit-scim -> "identity_management"
+          amazon-bedrock -> "bedrock"
+        For data/claude/claude/<subdir>/, use the SECOND-level subdir name
+        with dashes→underscores: conversation-management ->
+        "conversation_management", account-management -> "account_management",
+        usage-and-limits -> "usage_and_limits", etc.
+      - Visa:
+          support/consumer/travel-support -> "travel_support"
+          support/consumer/travelers-cheques -> "travelers_cheques"
+          support/consumer/visa-rules -> "visa_rules"
+          support/consumer/checkout-fees-contact-form -> "general_support"
+          support/consumer.md (top-level consumer page) -> "general_support"
+          support/small-business/dispute-resolution -> "dispute_resolution"
+          support/small-business/fraud-protection -> "fraud_protection"
+          support/small-business/data-security -> "data_security"
+          support/small-business/regulations-fees -> "regulations_fees"
+          support/small-business/travelers-cheques -> "travelers_cheques"
+          support/merchant.md -> "merchant"
+          support.md / index.md -> "general_support"
+
+    Add EMPTY_PRODUCT_AREA_STATUSES = {"escalated", "pleasantry_response",
+                                        "adversarial_response"} marker so
+    pipeline knows when to emit "".
+
+  code/retrieval/corpus.py
+    For each chunk, store an additional field `product_area_key` derived
+    from PRODUCT_AREA_LABELS at index-build time. Persist in chunks.jsonl.
+    On unknown path: log a WARNING and set product_area_key="" — never
+    silently make up a label.
+
+  code/stages/grounding.py
+    Remove the free-form `product_area` field from the tool schema. The LLM
+    no longer picks the label. Keep `cited_doc_ids` — that is what we use.
+
+  code/pipeline.py
+    After grounding, derive product_area DETERMINISTICALLY:
+      - if status == "escalated": product_area = ""
+      - elif scope in {pleasantry, adversarial}: product_area = ""
+      - else:
+          top_cited = passage with highest RRF score among cited_doc_ids
+          product_area = top_cited.product_area_key
+          if empty: product_area = "" (never invent)
+
+  code/tests/test_product_area.py  (NEW)
+    - test that PRODUCT_AREA_LABELS covers every directory found by
+      walking data/ — fail if any uncovered dir exists. This is a
+      regression guard so the corpus growing doesn't silently drop labels.
+    - test deterministic derivation: feed mock cited passages, assert the
+      label comes from PRODUCT_AREA_LABELS, not the LLM.
+    - test the 7 sample rows whose company is set: hand-derive the
+      expected label and assert pipeline.run produces it on a stub LLM.
+
+B. Cost gate: deterministic preflight short-circuits BEFORE routing (P1)
+
+  code/pipeline.py
+    Reorder:
+      flags = preflight.run(ticket)
+      # Deterministic short-circuits — NO LLM calls
+      if flags.is_pleasantry:
+          return _pleasantry_output(...)        # response="Happy to help"
+      if flags.is_adversarial:
+          return _oos_output(...)               # response=OOS_TEMPLATE
+      if flags.has_live_id:
+          return _escalation_output(...,
+                                    reason="live billing identifier present")
+      # Only NOW call routing
+      routing_decision = routing.classify(ticket, flags)
+      ...
+
+  Add unit tests that assert NO Anthropic client calls happen when
+  is_pleasantry/is_adversarial/has_live_id is True. Mock the client
+  and assert call_count == 0.
+
+C. Token budget caps (P1)
+
+  code/config.py
+    ROUTING_MAX_TOKENS = 256
+    GROUNDING_MAX_TOKENS = 1024
+    VERIFIER_MAX_TOKENS = 128
+
+  Wire these through llm.call_structured. Tests should verify the cap
+  is passed.
+
+D. Routing conservatism on request_type (P2)
+
+  code/stages/routing.py
+    System prompt change: routing emits request_type ONLY when
+    scope ∈ {pleasantry, adversarial, ambiguous_underspecified}.
+    For scope=in_scope, routing returns request_type=None and grounding
+    decides. Document this in the docstring.
+
+  code/pipeline.py
+    If routing.request_type is None, use grounding's request_type.
+    Else, routing's wins (it's only set on out-of-grounding cases).
+
+E. Diagnostics: per-row table in summary.md (P3)
+
+  code/eval/harness.py
+    summary.md gets a new section "Per-row breakdown" with this table:
+
+    | Row | Company | Status (P/E) | RT (P/E) | PA (P/E) | Resp ROUGE | Preflight | Routing | Top doc_id |
+    
+    Where (P/E) is predicted vs expected. ✓ if match, ✗ if not. Make this
+    rendered as a real markdown table so I can read it.
+
+DEFINITION OF DONE
+
+1. pytest -q green, including the new test_product_area suite.
+2. Re-run harness:
+     python -m code.eval.harness \
+       --sample support_tickets/sample_support_tickets.csv \
+       --ablate \
+       --out eval/runs/p0-product-area/
+   Paste:
+     - the full summary.md
+     - the per-row breakdown table
+     - the ablation table
+   Required: product_area accuracy >= 0.6 (6 of 10). If it's lower, do
+   NOT declare done — debug the derivation and try again.
+3. Re-run fuzz:
+     python -m code.eval.harness --fuzz --out eval/runs/p0-fuzz/
+   Required: fuzz row 1 (injection), row 4 (live-id), row 7 (adversarial)
+   all behave correctly. Paste the report.
+4. Cost: average cost per ticket on the 10-row sample MUST be below $0.022.
+   Print it from summary.md.
+5. Append §5.2 log entry.
+
+DO NOT
+- Do not pull routing or rerank from the pipeline.
+- Do not change retrieval k, RRF c, or the embedding model.
+- Do not add new dependencies.
+
+Agent Response Summary:
+Read AGENTS.md and used repo-local log.txt with the existing agreement marker. Implemented hand-authored PRODUCT_AREA_LABELS, persisted product_area_key into rebuilt chunks.jsonl, removed product_area from grounding tool output, and made pipeline derive product_area from cited passages. Added pre-routing deterministic cost gates, token caps, routing request_type conservatism, grounding passage compaction, per-row summary diagnostics, and tests for product area, token caps, and zero-cost short-circuits. Full pytest passes and the latest completed full sample run meets product_area and cost targets, but the complete post-cost ablation and full fuzz rerun are blocked by Anthropic credit exhaustion.
+
+Actions:
+* Read AGENTS.md and checked log.txt agreement marker.
+* Walked data/ and inspected code/retrieval/corpus.py, code/pipeline.py, code/eval/harness.py, and sample tickets.
+* Edited code/config.py, code/retrieval/corpus.py, code/retrieval/hybrid.py, code/schema.py, code/stages/grounding.py, code/stages/routing.py, code/stages/validator.py, code/pipeline.py, code/eval/harness.py.
+* Added code/tests/test_product_area.py and code/tests/test_grounding.py; updated routing, validator, pipeline, and retrieval tests.
+* Ran .venv/bin/python -m code.main build-index.
+* Ran .venv/bin/python -m pytest -q: 47 passed.
+* Ran .venv/bin/python -m compileall -q code.
+* Ran p0 product-area ablation; first complete run had product_area=0.600 but cost too high, then cost fixes made the latest full variant product_area=0.700 and average cost=$0.018902 before credits failed during later ablation variants.
+* Attempted .venv/bin/python -m code.eval.harness --fuzz --out eval/runs/p0-fuzz/; blocked by Anthropic low-credit error.
+* Ran direct deterministic checks for fuzz rows 1, 4, and 7.
+
+Context:
+tool=Codex
+branch=feature/routing-verifier
+repo_root=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
+worktree=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
+parent_agent=none
