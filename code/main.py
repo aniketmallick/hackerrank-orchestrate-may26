@@ -104,7 +104,10 @@ def _run_command(args: argparse.Namespace) -> int:
         for row_index, row in enumerate(tqdm(rows, desc="tickets"), start=1):
             ticket = _ticket_from_row(row)
             final = pipeline.run(ticket)
-            writer.writerow(final.to_csv_row())
+            csv_row = final.to_csv_row()
+            # Preserve the original company string verbatim (including "None").
+            csv_row["company"] = row.get("Company") or row.get("company") or ""
+            writer.writerow(csv_row)
             trace_handle.write(
                 json.dumps(
                     {
