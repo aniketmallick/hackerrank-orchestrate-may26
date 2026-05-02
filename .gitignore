@@ -33,3 +33,8 @@ data/embeddings/
 build_index_stdout.txt
 *.sqlite
 *.db
+
+# generated index (corpus cache, embeddings, BM25 cache)
+index/
+*.pkl
+*.npy

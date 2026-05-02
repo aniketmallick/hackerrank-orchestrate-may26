@@ -89,6 +89,8 @@ cd hackerrank-orchestrate-may26
 
 You are free to use any language or runtime. We recommend **Python**, **JavaScript**, or **TypeScript**.
 
+> **Implementation reference:** The full technical documentation for this submission — architecture, design decisions, ablation results, and limitations — lives in [`code/README.md`](./code/README.md). That document is written for the AI Judge interview and explains every decision against the rubric.
+
 ---
 
 ## Chat transcript logging

@@ -1109,3 +1109,50 @@ branch=feature/routing-verifier
 repo_root=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
 worktree=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
 parent_agent=none
+
+## [2026-05-02T07:59:32+05:30] Final Submission Artifacts — Production Run, README, Hygiene
+
+User Prompt (verbatim, secrets redacted):
+Read AGENTS.md first. Log this turn per §5.2.
+
+Context: status=1.0, request_type=1.0, product_area=0.7, cost=$0.0202/ticket,
+all P0 fuzz checks passing, 55 tests green. We're shipping. This prompt produces the final
+submission artifacts.
+
+DELIVERABLE 1 — Production run on the real CSV
+DELIVERABLE 2 — code/README.md (interview-grade, 7 sections)
+DELIVERABLE 3 — Repo-root README.md pointer paragraph
+DELIVERABLE 4 — Hygiene & submission packaging
+
+Agent Response Summary:
+Confirmed 55 tests green and ran the production pipeline on support_tickets/support_tickets.csv
+producing 29 valid rows (validated: header exact, enums correct, no None/nan leaks, response
+and justification non-empty for all rows). Ran the final ablation harness (--ablate) on the
+10-row sample (eval/runs/final/): status=1.000, request_type=1.000, product_area=0.700,
+response=0.300, cost=$0.020015/ticket. Ran final fuzz harness (eval/runs/final-fuzz/): rows
+1/2 (injection) escalated correctly, row 4 (live-id) escalated, row 7 (adversarial) OOS
+template, row 6 (pleasantry) "Happy to help". Wrote code/README.md with all 7 required
+sections including failure-mode table, ablation table (verbatim from eval/runs/final/),
+Limitations section with actual ROUGE-L (mean 0.454 on n=10, threshold-match=0.300), manual
+audit findings, and AI-vs-me architecture breakdown. Added pointer paragraph to repo-root
+README.md. Added *.pkl, *.npy, index/ to .gitignore. No key leaks in code/ (README placeholder
+sk-ant-... is documentation text, not a real key). index/ is 25M. All hygiene checks passed.
+
+Actions:
+* Ran .venv/bin/python -m pytest -q: 55 passed
+* Ran .venv/bin/python -m code.main run --input support_tickets/support_tickets.csv --output support_tickets/output.csv: 29 rows written
+* Validated output.csv: header exact, all enums valid, no leaks, response+justification non-empty
+* Ran .venv/bin/python -m code.eval.harness --sample ... --ablate --out eval/runs/final/
+* Ran .venv/bin/python -m code.eval.harness --fuzz --out eval/runs/final-fuzz/
+* Wrote code/README.md (7 sections: Quickstart, Architecture, Grounding, Determinism, Failure-Mode Table, Ablation Results, Limitations)
+* Edited README.md (repo root): added pointer to code/README.md
+* Edited .gitignore: added *.pkl, *.npy, index/
+* Ran grep for key leaks: no real keys found
+* Ran du -sh index/: 25M
+
+Context:
+tool=Codex
+branch=final-sub-artifacts
+repo_root=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
+worktree=main
+parent_agent=none
