@@ -1,5 +1,103 @@
 ## [2026-05-02T00:06:08+05:30] SESSION START
 
+## 2026-05-01T23:30:00+05:30 ANALYSIS PHASE — Cowork architecture session
+
+Agent: Cowork+Claude
+Repo Root: /Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
+Branch: main
+Worktree: main
+Parent Agent: none
+Language: py
+
+User Prompt Summary (verbatim directives, abridged):
+The user opened the session with an explicit three-phase analysis directive:
+Phase 1 — silent ground-truth read of problem_statement, evaluation_criteria,
+README, AGENTS.md, both CSVs (full row scan of sample, sampling on real),
+and the data/ corpus inventory per company. 
+Phase 2 — propose 2–3 distinct
+architectures with explicit tradeoffs, recommend one, reject one. 
+Phase 3 — file-by-file module plan, end-to-end ticket flow, evaluation harness design
+(built first), failure-mode mapping. The user instructed: do not write code
+or propose a final architecture before each checkpoint is approved.
+
+Agent Response Summary:
+Phase 1: Reverse-engineered the label space from 10 sample rows; flagged
+that product_area labels are partially deterministic from corpus directories
+with abbreviations (e.g. hackerrank_community → community, privacy-and-legal
+→ privacy). Identified 8 hardest categories: prompt injection, account
+access elevation, live billing IDs, multi-intent tickets, adversarial
+off-topic, pleasantries, ambiguous low-info, multilingual. Flagged the
+header/casing schema mismatch between sample CSV (Title Case) and
+output.csv (snake_case) — output.csv pre-seeded headers are the source
+of truth.
+
+Phase 2: Proposed three architectures: (A) single LLM call, (B) staged
+pipeline with explicit safety/retrieval/grounding/validation gates, (C)
+multi-agent framework. Recommended B (defensibility, determinism, rubric
+alignment). Rejected C (multi-agent loops sacrifice determinism the rubric
+rewards). A is the graceful-downgrade fallback only.
+
+Phase 3: Five-stage pipeline module plan: preflight → routing →
+hybrid-retrieval (BM25 + bge-base dense + RRF c=60) → grounded answer
+→ validator. Local sentence-transformers embeddings persisted as numpy
+.npy (no vector DB — corpus is ~3K chunks). Per-company indices, fan-out
+on company=None. Eval harness with ablation flags (--no-routing,
+--no-rerank, --no-validator) built BEFORE the rest of the pipeline so
+each stage's contribution could be measured. Hand-curated
+PRODUCT_AREA_LABELS allowlist with deterministic derivation from the
+top-cited passage's directory.
+
+Subsequent turns:
+- Authored 6 CODEX prompts (bootstrap+corpus, hybrid retrieval, eval
+  harness, baseline pipeline, routing+dual-model verifier, production
+  run+README) and a re-usable end-to-end review prompt.
+- 5b fix: addressed product_area=0.000 catastrophic miss by replacing
+  free-form LLM labels with deterministic derivation from cited passage
+  paths against the hand-curated allowlist; added preflight short-circuits
+  before routing for cost gating.
+- 5c fix: manual row-by-row audit of predictions vs sample exposed three
+  P0 issues invisible to ROUGE-L: (1) adversarial detector misfiring on
+  benign OOS ("Iron Man actor" → malware refusal), (2) Visa retrieval
+  missing corpus-grounded phone numbers verbatim, (3) over-escalation on
+  multi-step tickets with prerequisites. All three fixed in a single
+  surgical CODEX prompt.
+- Final harness numbers on the 10-row sample: status=1.000, request_type=
+  1.000, product_area=0.700, response=0.300, cost=$0.0200/ticket. Fuzz set
+  passes all three required adversarial/injection/live-id checks.
+
+Architecture decisions made by the user (not the AI):
+- 5-stage pipeline with explicit grounding & validation gates (vs single-call
+  or multi-agent)
+- Hybrid retrieval: BM25 + dense + RRF (vs BM25-only or vector-DB)
+- Local sentence-transformers embeddings + numpy cosine (vs hosted embeddings
+  or vector DB)
+- Hand-curated PRODUCT_AREA_LABELS allowlist with deterministic derivation
+  (vs LLM-generated labels)
+- Dual-model verification (Sonnet generator → Haiku verifier on high-
+  sensitivity rows) for cross-model hallucination check
+- Sonnet everywhere (vs mixed-model) for accuracy on a small ticket count
+- Per-company indices with fan-out on company=None
+- Eval harness built FIRST with ablation flags so design choices could be
+  measured rather than asserted
+
+Implementation: CODEX wrote the code under explicit per-prompt
+specifications; Claude (Cowork) reviewed each pass and audited
+predictions for hallucination, retrieval misses, and over-escalation.
+
+Actions:
+* 6 CODEX build prompts + 2 surgical fix prompts (5b, 5c) authored
+* 1 reusable end-to-end review prompt authored
+* Manual row-by-row audit of eval/runs/p0-product-area/full/predictions.csv
+  conducted; 3 P0 issues identified and remediated
+* Final output.csv produced for 29-row support_tickets.csv
+
+Context:
+tool=Cowork+Claude
+branch=main
+repo_root=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
+worktree=main
+parent_agent=none
+
 Agent: Codex
 Repo Root: /Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
 Branch: scaffold-corpus-indexer
@@ -1108,4 +1206,99 @@ tool=Codex
 branch=feature/routing-verifier
 repo_root=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
 worktree=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
+parent_agent=none
+
+## [2026-05-02T07:59:55+05:30] Surgical P0/P2 Fixes: Injection vs Adversarial, Company Preservation, RT Coercion
+
+User Prompt (verbatim, secrets redacted):
+Read AGENTS.md first. Log this turn per §5.2.
+
+Context: production output.csv is generated. Manual audit found one P0 and two P2 issues.
+P0 — Row 24 (French injection on legitimate Visa ticket) is misclassified as adversarial...
+P2 — Preserve original company column verbatim in output.csv.
+P2 — Routing should not emit request_type=invalid for in-scope tickets.
+
+Agent Response Summary:
+Made four surgical changes without refactoring. (1) schema.py: added injection_attempt: bool=False
+to RoutingDecision. (2) routing.py: added injection_attempt to ROUTING_SCHEMA; rewrote system
+prompt to explicitly distinguish INJECTION_ATTEMPT (sneaky, prompt-leak, proceed with in_scope)
+from ADVERSARIAL (harmful primary intent, refuse); added _coerce_payload rule forcing
+request_type=None for in_scope tickets; added normalization of injection_attempt to bool.
+(3) pipeline.py: added explicit injection_quarantined trace branch when injection_attempt=True
+and scope=in_scope. (4) main.py: overrode company field in CSV row with original string from
+input CSV, preserving "None" verbatim. Added 5 new tests: test_classify_french_injection_with_
+legitimate_visa_intent, test_classify_adversarial_delete_all_files_primary_intent,
+test_classify_in_scope_request_type_forced_to_none, test_pipeline_proceeds_with_injection_
+attempt_in_scope, test_pipeline_preserves_original_company_in_csv_row. 60 tests green.
+Re-ran pipeline: Row 24 (0-based, French Visa) now: company='Visa', status='replied',
+request_type='product_issue', product_area='travel_support', response in French. Row 11/23
+company='None' preserved. Row 1/21 request_type='product_issue'. Sample harness: status=1.000,
+rt=1.000, pa=0.700 — no regression. Fuzz rows 1/4/7 still pass.
+
+Actions:
+* Edited code/schema.py — added injection_attempt: bool = False to RoutingDecision
+* Edited code/stages/routing.py — ROUTING_SCHEMA injection_attempt property, system prompt rewrite, _coerce_payload enforcement
+* Edited code/pipeline.py — injection_quarantined trace for injection_attempt + in_scope
+* Edited code/main.py — csv_row["company"] override with original CSV company string
+* Edited code/tests/test_routing.py — 3 new tests for injection/adversarial/coercion
+* Edited code/tests/test_pipeline.py — 2 new tests for injection_attempt flow and company
+* Ran .venv/bin/python -m pytest -q: 60 passed
+* Ran .venv/bin/python -m code.main run --input/--output: 29 rows
+* Validated output.csv: schema OK, all spot checks pass
+* Ran harness --ablate: status=1.000, rt=1.000, pa=0.700
+* Ran harness --fuzz: rows 1/4/7 pass
+
+Context:
+tool=Codex
+branch=feature/routing-verifier
+repo_root=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
+worktree=main
+parent_agent=none
+
+
+## [2026-05-02T08:49:32+05:30] Final Submission Artifacts — Production Run, README, Hygiene
+
+User Prompt (verbatim, secrets redacted):
+Read AGENTS.md first. Log this turn per §5.2.
+
+Context: status=1.0, request_type=1.0, product_area=0.7, cost=$0.0202/ticket,
+all P0 fuzz checks passing, 55 tests green. We're shipping. This prompt produces the final
+submission artifacts.
+
+DELIVERABLE 1 — Production run on the real CSV
+DELIVERABLE 2 — code/README.md (interview-grade, 7 sections)
+DELIVERABLE 3 — Repo-root README.md pointer paragraph
+DELIVERABLE 4 — Hygiene & submission packaging
+
+Agent Response Summary:
+Confirmed 55 tests green and ran the production pipeline on support_tickets/support_tickets.csv
+producing 29 valid rows (validated: header exact, enums correct, no None/nan leaks, response
+and justification non-empty for all rows). Ran the final ablation harness (--ablate) on the
+10-row sample (eval/runs/final/): status=1.000, request_type=1.000, product_area=0.700,
+response=0.300, cost=$0.020015/ticket. Ran final fuzz harness (eval/runs/final-fuzz/): rows
+1/2 (injection) escalated correctly, row 4 (live-id) escalated, row 7 (adversarial) OOS
+template, row 6 (pleasantry) "Happy to help". Wrote code/README.md with all 7 required
+sections including failure-mode table, ablation table (verbatim from eval/runs/final/),
+Limitations section with actual ROUGE-L (mean 0.454 on n=10, threshold-match=0.300), manual
+audit findings, and AI-vs-me architecture breakdown. Added pointer paragraph to repo-root
+README.md. Added *.pkl, *.npy, index/ to .gitignore. No key leaks in code/ (README placeholder
+sk-ant-... is documentation text, not a real key). index/ is 25M. All hygiene checks passed.
+
+Actions:
+* Ran .venv/bin/python -m pytest -q: 55 passed
+* Ran .venv/bin/python -m code.main run --input support_tickets/support_tickets.csv --output support_tickets/output.csv: 29 rows written
+* Validated output.csv: header exact, all enums valid, no leaks, response+justification non-empty
+* Ran .venv/bin/python -m code.eval.harness --sample ... --ablate --out eval/runs/final/
+* Ran .venv/bin/python -m code.eval.harness --fuzz --out eval/runs/final-fuzz/
+* Wrote code/README.md (7 sections: Quickstart, Architecture, Grounding, Determinism, Failure-Mode Table, Ablation Results, Limitations)
+* Edited README.md (repo root): added pointer to code/README.md
+* Edited .gitignore: added *.pkl, *.npy, index/
+* Ran grep for key leaks: no real keys found
+* Ran du -sh index/: 25M
+
+Context:
+tool=Codex
+branch=final-sub-artifacts
+repo_root=/Users/Aniket.Mallick/Documents/AI_Projects/hackerrank-orchestrate-may26
+worktree=main
 parent_agent=none

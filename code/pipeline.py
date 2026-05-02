@@ -96,6 +96,12 @@ class Pipeline:
                 "adversarial",
             )
 
+        if route.injection_attempt and route.scope == "in_scope":
+            # Injection embedded in a legitimate support request.
+            # The <untrusted_user_input> quarantine in grounding neutralises it.
+            # Proceed with normal retrieval+grounding flow.
+            self._trace("injection_quarantined", {"reason": "injection_attempt_with_legitimate_intent"})
+
         passages = _retrieve(
             _query(ticket),
             company=_retrieval_company(flags),

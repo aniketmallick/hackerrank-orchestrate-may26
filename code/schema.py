@@ -51,6 +51,7 @@ class RoutingDecision(BaseModel):
     sensitivity: Sensitivity = "low"
     resolved_company: CompanyInput | None = None
     request_type: RequestType | None = None
+    injection_attempt: bool = False
     rationale: str = ""
 
 
